@@ -281,23 +281,23 @@ public class RemoteActivity extends Activity {
 
         // ─── صف الأزرار 1: رجوع | الرئيسية | تشغيل/وقف ───
         LinearLayout row1 = row();
-        row1.addView(flexBtn(row1, "↩ رجوع", "Escape"));
-        row1.addView(flexBtn(row1, "🏠 الرئيسية", "Home"));
-        row1.addView(flexBtn(row1, "⏯ تشغيل/وقف", " "));
+        flexBtn(row1, "↩ رجوع", "Escape");
+        flexBtn(row1, "🏠 الرئيسية", "Home");
+        flexBtn(row1, "⏯ تشغيل/وقف", " ");
         r.addView(row1);
 
         // ─── صف 2: صوت− | كتم | صوت+ ───
         LinearLayout row2 = row();
-        row2.addView(flexBtn2(row2, "🔊 −", () -> sendCmd("{\"action\":\"volume\",\"delta\":-0.05}")));
-        row2.addView(flexBtn2(row2, "🔇 كتم", () -> sendCmd("{\"action\":\"mute\"}")));
-        row2.addView(flexBtn2(row2, "🔊 +", () -> sendCmd("{\"action\":\"volume\",\"delta\":0.05}")));
+        flexBtn2(row2, "🔊 −", () -> sendCmd("{\"action\":\"volume\",\"delta\":-0.05}"));
+        flexBtn2(row2, "🔇 كتم", () -> sendCmd("{\"action\":\"mute\"}"));
+        flexBtn2(row2, "🔊 +", () -> sendCmd("{\"action\":\"volume\",\"delta\":0.05}"));
         r.addView(row2);
 
         // ─── صف 3: قناة+ | ملء الشاشة | قناة− ───
         LinearLayout row3 = row();
-        row3.addView(flexBtn(row3, "➕ قناة", "PageUp"));
-        row3.addView(flexBtn(row3, "⛶ ملء الشاشة", "f"));
-        row3.addView(flexBtn(row3, "➖ قناة", "PageDown"));
+        flexBtn(row3, "➕ قناة", "PageUp");
+        flexBtn(row3, "⛶ ملء الشاشة", "f");
+        flexBtn(row3, "➖ قناة", "PageDown");
         r.addView(row3);
 
         // ─── الأرقام 0-9 (قناة بالرقم) ───
