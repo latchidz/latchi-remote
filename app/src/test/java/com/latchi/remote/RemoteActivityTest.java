@@ -111,6 +111,44 @@ public class RemoteActivityTest {
             assertTrue("يحوي " + n, labels.contains(n));
     }
 
+    @Test
+    public void keyboardSheetOpensWithTypeBox() {
+        RemoteActivity a = Robolectric.setupActivity(RemoteActivity.class);
+        a.showKeyboard();
+        Dialog d = ShadowDialog.getLatestDialog();
+        assertNotNull("لوحة الكيبورد تنفتح", d);
+        // حقل الكتابة موجود
+        List<android.widget.EditText> boxes = new ArrayList<>();
+        collectEditTexts((ViewGroup) d.getWindow().getDecorView(), boxes);
+        assertEquals("حقل كتابة واحد", 1, boxes.size());
+        // الأزرار الثلاثة: مسافة + ⌫ + ↵
+        List<Button> btns = new ArrayList<>();
+        collectButtons((ViewGroup) d.getWindow().getDecorView(), btns);
+        assertEquals("3 أزرار مساعدة", 3, btns.size());
+        List<String> labels = new ArrayList<>();
+        for (Button b : btns) labels.add(b.getText().toString());
+        // ⌫ و↵ رموز ثابتة عبر اللغات؛ زر المسافة نصه مترجم (مسافة/Space/Espace)
+        assertTrue("يحوي ⌫", labels.contains("⌫"));
+        assertTrue("يحوي ↵", labels.contains("↵"));
+        boolean hasSpace = false;
+        for (String l : labels) if (!l.equals("⌫") && !l.equals("↵") && l.trim().length() > 1) hasSpace = true;
+        assertTrue("يحوي زر المسافة (بلغة الجهاز)", hasSpace);
+        // الكتابة في الحقل تُرسل فوراً: نحاكي إدراج حرف — المنفذ قد لا يكون موصولاً لكن لا يُسمح بأي استثناء
+        boxes.get(0).getText().append("a");
+        // ⌫ يحذف آخر حرف من الحقل
+        android.text.Editable e = boxes.get(0).getText();
+        e.append("b"); e.delete(e.length() - 1, e.length());
+        assertEquals("الحقل فارغ بعد الحذف", 1, boxes.get(0).getText().length());   // "a" بقيت
+    }
+
+    private static void collectEditTexts(ViewGroup g, List<android.widget.EditText> out) {
+        for (int i = 0; i < g.getChildCount(); i++) {
+            View c = g.getChildAt(i);
+            if (c instanceof android.widget.EditText) out.add((android.widget.EditText) c);
+            else if (c instanceof ViewGroup) collectEditTexts((ViewGroup) c, out);
+        }
+    }
+
     private static void collectButtons(ViewGroup g, List<Button> out) {
         for (int i = 0; i < g.getChildCount(); i++) {
             View c = g.getChildAt(i);

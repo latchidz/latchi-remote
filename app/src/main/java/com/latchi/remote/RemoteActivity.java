@@ -98,6 +98,7 @@ public class RemoteActivity extends Activity {
     private String hostName = "";
     private String pin = "";
     private boolean connected = false;
+    private String deskAppVer = "";   // ⌨ ج50: نسخة تطبيق الحاسوب من /ping (فارغة = تحديث قديم بلا فأرة/كيبورد)
     private int fails = 0;
     private boolean searching = false;
     private boolean reconnecting = false;
@@ -480,8 +481,18 @@ public class RemoteActivity extends Activity {
         tp.addView(rail, rlLp);
         body.addView(tp);
 
+        // ═ ⌨ الكيبورد والأرقام — صف الأدوات الذهبي (ج50: الكيبورد مثل الأرقام تماماً) ═
+        LinearLayout tools = ctlRow(12);
+        LinearLayout kbBtn = ctl(tools, R.drawable.ic_keyboard, R.string.keyboard, this::showKeyboard);
+        kbBtn.setBackground(goldOutlinePress());
+        tintCtl(kbBtn, GOLD);
+        LinearLayout numsBtn = ctl(tools, R.drawable.ic_numpad, R.string.numbers, this::showNumbers);
+        numsBtn.setBackground(goldOutlinePress());
+        tintCtl(numsBtn, GOLD);
+        body.addView(tools);
+
         // ═ الوسائط — صف مضغوط بأيقونات ═
-        LinearLayout media = ctlRow(12);
+        LinearLayout media = ctlRow(8);
         ctl(media, R.drawable.ic_ch_down, R.string.btn_ch_down, () -> key("PageDown"));
         ctl(media, R.drawable.ic_play, R.string.btn_play_pause, () -> key(" "));
         playIcon = lastCtlIcon;
@@ -489,14 +500,11 @@ public class RemoteActivity extends Activity {
         ctl(media, R.drawable.ic_fullscreen, R.string.btn_fs, () -> key("f"));
         body.addView(media);
 
-        // ═ الصوت + زر الأرقام (أسفل يمين = موضع الإبهام) ═
+        // ═ الصوت ═
         LinearLayout vols = ctlRow(8);
         ctl(vols, R.drawable.ic_vol_down, R.string.btn_vol_down, () -> sendCmd("{\"action\":\"volume\",\"delta\":-0.05}"));
         ctl(vols, R.drawable.ic_mute, R.string.btn_mute, () -> sendCmd("{\"action\":\"mute\"}"));
         ctl(vols, R.drawable.ic_vol_up, R.string.btn_vol_up, () -> sendCmd("{\"action\":\"volume\",\"delta\":0.05}"));
-        LinearLayout nums = ctl(vols, R.drawable.ic_numpad, R.string.numbers, this::showNumbers);
-        nums.setBackground(goldOutlinePress());
-        tintCtl(nums, GOLD);
         body.addView(vols);
 
         r.addView(s, new LinearLayout.LayoutParams(-1, 0, 1f));
@@ -736,6 +744,116 @@ public class RemoteActivity extends Activity {
         }
         d.setCanceledOnTouchOutside(true);
         d.show();
+    }
+
+    // ═══════════════════ ⌨ لوحة المفاتيح (ج50) — Bottom Sheet مثل الأرقام تماماً ═══════════════════
+    // كل حرف يُرسل فوراً للحاسوب وهو يدرجه في الحقل المركّز (البحث/الأكواد) — بلا زر «إرسال».
+    void showKeyboard() {
+        Dialog d = new Dialog(this);
+        d.requestWindowFeature(Window.FEATURE_NO_TITLE);
+        LinearLayout p = new LinearLayout(this);
+        p.setOrientation(LinearLayout.VERTICAL);
+        GradientDrawable bg = round(PANEL, 0, 0, 0);
+        bg.setCornerRadii(new float[]{dp(22), dp(22), dp(22), dp(22), 0, 0, 0, 0});
+        bg.setStroke(dp(1), STROKE);
+        p.setBackground(bg);
+        p.setPadding(dp(10), dp(10), dp(10), dp(16));
+
+        View handle = new View(this);
+        GradientDrawable hd = round(MUT, dp(2), 0, 0);
+        handle.setBackground(hd);
+        LinearLayout.LayoutParams hLp = new LinearLayout.LayoutParams(dp(38), dp(4));
+        hLp.gravity = Gravity.CENTER_HORIZONTAL;
+        p.addView(handle, hLp);
+
+        LinearLayout tRow = new LinearLayout(this);
+        tRow.setOrientation(LinearLayout.HORIZONTAL);
+        tRow.setGravity(Gravity.CENTER_VERTICAL);
+        LinearLayout.LayoutParams trLp = new LinearLayout.LayoutParams(-1, -2);
+        trLp.topMargin = dp(12); trLp.bottomMargin = dp(4);
+        tRow.setLayoutParams(trLp);
+        TextView t = new TextView(this);
+        t.setText(R.string.keyboard_title);
+        t.setTextColor(TXT); t.setTextSize(14);
+        t.setTypeface(Typeface.DEFAULT_BOLD, Typeface.BOLD);
+        tRow.addView(t, new LinearLayout.LayoutParams(0, -2, 1f));
+        ImageView x = icon(R.drawable.ic_close, MUT, 16);
+        x.setBackground(pressCircle(PANEL2, dp(15)));
+        x.setPadding(dp(6), dp(6), dp(6), dp(6));
+        x.setContentDescription(getString(R.string.close));
+        x.setOnClickListener(v -> d.dismiss());
+        LinearLayout.LayoutParams xLp = new LinearLayout.LayoutParams(dp(30), dp(30));
+        tRow.addView(x, xLp);
+        p.addView(tRow);
+
+        // حقل الكتابة — كل تغيير يُرسل فوراً (الإضافة حرفاً حرفاً، والحذف Backspace)
+        final EditText box = new EditText(this);
+        box.setHint(R.string.kb_hint);
+        box.setTextColor(TXT);
+        box.setHintTextColor(MUT);
+        box.setTextSize(15);
+        box.setSingleLine(true);
+        box.setBackground(round(PANEL2, 12 * dp(1), STROKE, 1 * dp(1)));
+        box.setPadding(dp(12), dp(11), dp(12), dp(11));
+        p.addView(box, new LinearLayout.LayoutParams(-1, -2));
+        final String[] prev = {""};
+        box.addTextChangedListener(new android.text.TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence s, int a, int b, int c) {}
+            @Override public void onTextChanged(CharSequence s, int a, int b, int c) {}
+            @Override public void afterTextChanged(android.text.Editable s) {
+                String cur = s.toString();
+                String oldTxt = prev[0];
+                int common = 0;
+                while (common < oldTxt.length() && common < cur.length() && oldTxt.charAt(common) == cur.charAt(common)) common++;
+                for (int i = 0; i < oldTxt.length() - common; i++) key("Backspace");
+                for (int i = common; i < cur.length(); i++) key(String.valueOf(cur.charAt(i)));
+                prev[0] = cur;
+            }
+        });
+
+        // أزرار مساعدة — نفس قياس أزرار الأرقام (56dp)
+        LinearLayout r1 = new LinearLayout(this);
+        r1.setOrientation(LinearLayout.HORIZONTAL);
+        Button sp = mkBtn(getString(R.string.kb_space), PANEL, TXT);
+        sp.setTextSize(16);
+        sp.setOnClickListener(v -> { haptic(v); key(" "); });
+        LinearLayout.LayoutParams spLp = new LinearLayout.LayoutParams(0, 56 * dp(1), 2f);
+        spLp.setMargins(dp(4), dp(4), dp(4), dp(4));
+        r1.addView(sp, spLp);
+        Button del = mkBtn(getString(R.string.kb_del), PANEL, GOLD);
+        del.setTextSize(19);
+        del.setOnClickListener(v -> {
+            haptic(v);
+            android.text.Editable e = box.getText();
+            if (e.length() > 0) e.delete(e.length() - 1, e.length());   // الحذف من الحقل يشعل المرسل تلقائياً
+        });
+        LinearLayout.LayoutParams delLp = new LinearLayout.LayoutParams(0, 56 * dp(1), 1f);
+        delLp.setMargins(dp(4), dp(4), dp(4), dp(4));
+        r1.addView(del, delLp);
+        Button en = mkBtn(getString(R.string.kb_enter), PANEL, GOLD);
+        en.setTextSize(19);
+        bindKey(en, "Enter");
+        LinearLayout.LayoutParams enLp = new LinearLayout.LayoutParams(0, 56 * dp(1), 1f);
+        enLp.setMargins(dp(4), dp(4), dp(4), dp(4));
+        r1.addView(en, enLp);
+        p.addView(r1, new LinearLayout.LayoutParams(-1, -2));
+
+        d.setContentView(p);
+        Window w = d.getWindow();
+        if (w != null) {
+            w.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+            w.setGravity(Gravity.BOTTOM);
+            w.setLayout(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.WRAP_CONTENT);
+            w.setWindowAnimations(R.style.SheetAnim);
+        }
+        d.setCanceledOnTouchOutside(true);
+        d.show();
+        // فتح كيبورد الهاتف فوراً على الحقل
+        box.postDelayed(() -> {
+            box.requestFocus();
+            android.view.inputmethod.InputMethodManager imm = (android.view.inputmethod.InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
+            if (imm != null) imm.showSoftInput(box, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT);
+        }, 120);
     }
 
     // ═══════════════════ مكونات مساعدة ═══════════════════
@@ -1113,6 +1231,7 @@ public class RemoteActivity extends Activity {
             HttpResp r = http("GET", "http://" + host + ":37777/ping", null, pin);
             if (r.code != 200) throw new Exception("HTTP " + r.code);
             String name = nz(jstr(r.body, "name"), getString(R.string.found_pc));
+            deskAppVer = nz(jstr(r.body, "appVer"), "");   // ⌨ ج50: نسخة الحاسوب (فارغة = تحديث قديم)
             boolean needPin = r.body.contains("\"pin\":true") || r.body.contains("\"pin\": true");
             hostName = name;
             if (needPin) {
@@ -1136,6 +1255,7 @@ public class RemoteActivity extends Activity {
             if (r.body.contains("\"pin\":true") && pin.isEmpty()) { ui.post(this::resetConnectScreen); return; }
             HttpResp st = http("GET", "http://" + host + ":37777/status", null, pin);
             if (st.code == 401) { ui.post(this::resetConnectScreen); return; }
+            deskAppVer = nz(jstr(r.body, "appVer"), "");   // ⌨ ج50
             final String nm = nz(jstr(r.body, "name"), getString(R.string.found_pc));
             hostName = nm;
             ui.post(() -> enterRemote(nm));
@@ -1194,6 +1314,12 @@ public class RemoteActivity extends Activity {
         userLeft = false;
         headName.setText(name);
         hostName = name;
+        // ⌨ ج50: كشف النسخة القديمة — تحديث الحاسوب القديم لا يدعم الفأرة والكيبورد
+        if (deskAppVer.isEmpty()) toast(getString(R.string.old_pc_ver));
+        headName.setOnLongClickListener(v -> {
+            toast(getString(deskAppVer.isEmpty() ? R.string.pc_ver_unknown : R.string.pc_ver, deskAppVer.isEmpty() ? "" : deskAppVer));
+            return true;
+        });
         connectScreen.setVisibility(View.GONE);
         remoteScreen.setVisibility(View.VISIBLE);
         SharedPreferences.Editor ed = getSharedPreferences("latchi_remote", MODE_PRIVATE).edit();

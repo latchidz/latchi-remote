@@ -49,4 +49,13 @@
     <string name="close">إغلاق</string>
     <string name="key_del">⌫</string>
     <string name="key_enter">↵</string>
+    <string name="keyboard">الكيبورد</string>
+    <string name="keyboard_title">لوحة المفاتيح</string>
+    <string name="kb_hint">اكتب هنا — كل حرف يُرسل فوراً للحاسوب</string>
+    <string name="kb_space">مسافة</string>
+    <string name="kb_del">⌫</string>
+    <string name="kb_enter">↵</string>
+    <string name="old_pc_ver">⚠️ نسخة تطبيق الحاسوب قديمة — حدّثها لتفعيل الفأرة والكيبورد</string>
+    <string name="pc_ver">نسخة تطبيق الحاسوب: %s</string>
+    <string name="pc_ver_unknown">نسخة الحاسوب غير معروفة (تحديث قديم)</string>
 </resources>

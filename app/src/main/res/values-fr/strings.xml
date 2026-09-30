@@ -49,4 +49,13 @@
     <string name="close">Fermer</string>
     <string name="key_del">⌫</string>
     <string name="key_enter">↵</string>
+    <string name="keyboard">Clavier</string>
+    <string name="keyboard_title">Clavier</string>
+    <string name="kb_hint">Tapez ici — chaque caractère est envoyé instantanément</string>
+    <string name="kb_space">Espace</string>
+    <string name="kb_del">⌫</string>
+    <string name="kb_enter">↵</string>
+    <string name="old_pc_ver">⚠️ Version PC obsolète — mettez-la à jour pour la souris et le clavier</string>
+    <string name="pc_ver">Version de l\'appli PC : %s</string>
+    <string name="pc_ver_unknown">Version PC inconnue (ancienne mise à jour)</string>
 </resources>
