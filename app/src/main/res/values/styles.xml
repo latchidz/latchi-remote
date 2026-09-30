@@ -8,4 +8,9 @@
         <item name="android:navigationBarColor">#070B1C</item>
         <item name="android:windowLightStatusBar">false</item>
     </style>
+    <!-- أنيميشن صعود/هبوط لوحة الأرقام السفلية -->
+    <style name="SheetAnim">
+        <item name="android:windowEnterAnimation">@anim/slide_up_in</item>
+        <item name="android:windowExitAnimation">@anim/slide_down_out</item>
+    </style>
 </resources>
