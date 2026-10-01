@@ -120,7 +120,7 @@ workflows:
           ASSET="latchi-remote-${REMOTE_VERSION_NAME}.apk"
           API="https://api.github.com/repos/$OWNER/$REPO"
           AUTH="Authorization: Bearer $GITHUB_TOKEN"
-          export NOTES_AR REMOTE_VERSION_NAME REMOTE_VERSION_CODE
+          export NOTES_AR REMOTE_VERSION_NAME REMOTE_VERSION_CODE TAG
 
           echo "Creating or reading GitHub Release $OWNER/$REPO $TAG"
           RELEASE_JSON=$(curl -sS -H "$AUTH" -H "Accept: application/vnd.github+json" "$API/releases/tags/$TAG" || true)
