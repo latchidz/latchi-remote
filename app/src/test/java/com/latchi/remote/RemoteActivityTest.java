@@ -107,8 +107,12 @@ public class RemoteActivityTest {
         assertEquals("12 زر أرقام", 12, btns.size());
         List<String> labels = new ArrayList<>();
         for (Button b : btns) labels.add(b.getText().toString());
-        for (String n : new String[]{"1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "", "↵"})
+        for (String n : new String[]{"1", "2", "3", "4", "5", "6", "7", "8", "9", "0"})
             assertTrue("يحوي " + n, labels.contains(n));
+        // ج51: زرا الحذف والإدخال نصيان مترجمان (بلا رموز) — الفحص محايد للغة
+        int txtBtns = 0;
+        for (String l : labels) if (l.trim().length() > 1) txtBtns++;
+        assertEquals("زران نصيان (حذف + إدخال)", 2, txtBtns);
     }
 
     @Test
