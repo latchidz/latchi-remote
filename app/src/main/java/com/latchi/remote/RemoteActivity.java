@@ -3,7 +3,10 @@ package com.latchi.remote;
 import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.app.Dialog;
+import android.content.BroadcastReceiver;
 import android.content.Context;
+import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.graphics.Canvas;
 import android.graphics.Color;
@@ -1436,7 +1439,7 @@ public class RemoteActivity extends Activity {
     }
 
     /** أمر بحث قابل للتمرير (بلا java.util.function — توافق مع أندرويد 5) */
-    private interface QRun { void go(String q); }
+    private interface QRun { void accept(String q); }
 
     // ═══════════════════ ج51: البحث في محتوى الجهاز المتصل (حاسوب أو تلفاز) ═══════════════════
 
