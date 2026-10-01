@@ -1,0 +1,152 @@
+workflows:
+  # ═══ 🔍 ج51: الريموت v1.1.0 — البحث الشامل + أنواع الأجهزة (LATCHI PC / LATCHI TV) ═══
+  remote-release-build:
+    name: Latchi Remote Release APK
+    max_build_duration: 90
+    instance_type: mac_mini_m2
+
+    environment:
+      java: 17
+      vars:
+        UPDATE_REPO_OWNER: latchidz
+        UPDATE_REPO: LATCHI-RELEASES
+        # GITHUB_TOKEN يُمرر عند تشغيل البناء عبر API (لا يُخزن بالمستودع)
+        REMOTE_VERSION_NAME: "1.1.0"
+        REMOTE_VERSION_CODE: "6"
+        NOTES_AR: "LATCHI Remote 1.1.0 — بحث شامل في محتوى الجهاز المتصل (قناة/فيلم/مسلسل) وتشغيل فوري بالضغط على النتيجة + دعم تلفاز LATCHI TV بأيقونة مختلفة وتحكم كامل + أيقونات متجهة نظيفة بلا أي إيموجي"
+
+    scripts:
+      - name: Verify Gradle wrapper
+        script: |
+          if [ ! -f "./gradlew" ]; then
+            echo "ERROR: gradlew not found"
+            exit 1
+          fi
+          echo "Gradle wrapper found"
+
+      - name: Clean local machine files
+        script: |
+          rm -f local.properties
+          rm -rf .idea
+          rm -rf app/release
+
+      - name: Make Gradle executable
+        script: chmod +x ./gradlew
+
+      - name: Unit tests (Robolectric)
+        script: |
+          attempt=1
+          max=3
+          while true; do
+            echo "===== Test attempt $attempt ====="
+            set -o pipefail
+            ./gradlew testReleaseUnitTest --stacktrace 2>&1 | tee test_log.txt
+            status=$?
+            set +o pipefail
+            if [ "$status" -eq 0 ]; then
+              echo "Tests passed"
+              break
+            fi
+            if grep -qiE "Read timed out|Could not (GET|download)|connection reset|Network is unreachable|Could not resolve|ZipException|not a ZIP archive" test_log.txt \
+               && ! grep -qiE "FAILED|Compilation error|^e: |error:" test_log.txt \
+               && [ "$attempt" -lt "$max" ]; then
+              echo "Network issue detected. Retrying in 20s..."
+              attempt=$((attempt+1))
+              sleep 20
+              continue
+            fi
+            echo "Tests failed due to a real error (see log above). Stopping."
+            exit 1
+          done
+
+      - name: Build Release APK
+        script: |
+          attempt=1
+          max=3
+          while true; do
+            echo "===== Build attempt $attempt ====="
+            set -o pipefail
+            ./gradlew clean assembleRelease --stacktrace 2>&1 | tee build_log.txt
+            status=$?
+            set +o pipefail
+            if [ "$status" -eq 0 ]; then
+              echo "Build succeeded"
+              break
+            fi
+            if grep -qiE "Read timed out|Could not (GET|download)|connection reset|Network is unreachable|Could not resolve|ZipException|not a ZIP archive|unknown archive|Failed to install the following SDK components" build_log.txt \
+               && ! grep -qiE "compileReleaseJavaWithJavac FAILED|Compilation error|^e: " build_log.txt \
+               && [ "$attempt" -lt "$max" ]; then
+              echo "Network issue detected. Retrying in 20s..."
+              attempt=$((attempt+1))
+              sleep 20
+              continue
+            fi
+            echo "Build failed due to a real error (see log above). Stopping."
+            exit 1
+          done
+
+      - name: Verify APK exists
+        script: |
+          APK=$(find app/build/outputs/apk/release -name "*.apk" | head -1)
+          if [ -z "$APK" ]; then
+            echo "ERROR: No APK produced — build did not actually succeed."
+            exit 1
+          fi
+          echo "APK found: $APK"
+          mkdir -p "$CM_BUILD_DIR/artifacts"
+          cp "$APK" "$CM_BUILD_DIR/artifacts/remote-release.apk"
+          ls -la "$CM_BUILD_DIR/artifacts"
+
+      - name: Publish to GitHub Releases (remote-v tag)
+        script: |
+          set -e
+          if [ -z "$GITHUB_TOKEN" ]; then
+            echo "GITHUB_TOKEN is not set. Skipping publish."
+            exit 0
+          fi
+
+          OWNER="$UPDATE_REPO_OWNER"
+          REPO="$UPDATE_REPO"
+          APK="$CM_BUILD_DIR/artifacts/remote-release.apk"
+          if [ ! -f "$APK" ]; then
+            APK=$(find app/build/outputs -name "*.apk" | head -1)
+          fi
+          if [ ! -f "$APK" ]; then
+            echo "No APK found for publish"
+            exit 1
+          fi
+
+          TAG="remote-v${REMOTE_VERSION_NAME}"
+          ASSET="latchi-remote-${REMOTE_VERSION_NAME}.apk"
+          API="https://api.github.com/repos/$OWNER/$REPO"
+          AUTH="Authorization: Bearer $GITHUB_TOKEN"
+          export NOTES_AR REMOTE_VERSION_NAME
+
+          echo "Creating or reading GitHub Release $OWNER/$REPO $TAG"
+          RELEASE_JSON=$(curl -sS -H "$AUTH" -H "Accept: application/vnd.github+json" "$API/releases/tags/$TAG" || true)
+          if ! echo "$RELEASE_JSON" | grep -q '"upload_url"'; then
+            RELEASE_PAYLOAD=$(python3 -c 'import json,os; print(json.dumps({"tag_name":os.environ["TAG"],"name":"Latchi Remote "+os.environ["REMOTE_VERSION_NAME"],"body":os.environ.get("NOTES_AR","Latchi Remote update"),"draft":False,"prerelease":False}))')
+            RELEASE_JSON=$(curl -sS -X POST -H "$AUTH" -H "Accept: application/vnd.github+json" -H "Content-Type: application/json" -d "$RELEASE_PAYLOAD" "$API/releases")
+          fi
+
+          # لا تحريك وسم قائم: إن كانت الأصول موجودة مسبقاً نوقف النشر
+          if echo "$RELEASE_JSON" | grep -q "\"name\": \"${ASSET}\""; then
+            echo "Asset $ASSET already exists in release $TAG — refusing to overwrite."
+            exit 1
+          fi
+
+          UPLOAD_URL=$(RELEASE_JSON="$RELEASE_JSON" python3 -c 'import json,os; print(json.loads(os.environ["RELEASE_JSON"])["upload_url"].split("{")[0])')
+          echo "Uploading APK asset $ASSET"
+          ASSET_JSON=$(curl -sS -X POST -H "$AUTH" -H "Accept: application/vnd.github+json" -H "Content-Type: application/vnd.android.package-archive" --data-binary @"$APK" "$UPLOAD_URL?name=$ASSET")
+          APK_URL=$(ASSET_JSON="$ASSET_JSON" python3 -c 'import json,os; print(json.loads(os.environ["ASSET_JSON"]).get("browser_download_url", ""))')
+          if [ -z "$APK_URL" ]; then
+            echo "GitHub upload failed: $ASSET_JSON"
+            exit 1
+          fi
+          echo "Public APK URL: $APK_URL"
+
+    artifacts:
+      - artifacts/*.apk
+      - app/build/outputs/**/*.apk
+      - build_log.txt
+      - test_log.txt

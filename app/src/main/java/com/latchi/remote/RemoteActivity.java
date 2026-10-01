@@ -58,7 +58,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 /**
- * 📱 LATCHI Remote v1.0.3 — لوحة تحكم احترافية Premium بتصميم واحد متناسق.
+ * LATCHI Remote v1.0.3 — لوحة تحكم احترافية Premium بتصميم واحد متناسق.
  *
  * ج49 (إعادة تصميم UX/UI فوق نفس منطق الاتصال دون أي تغيير):
  * - D-Pad حقيقي: قطعة واحدة متصلة (DPadView مخصص على Canvas) — الأسهم ملاصقة لـ OK
@@ -98,7 +98,8 @@ public class RemoteActivity extends Activity {
     private String hostName = "";
     private String pin = "";
     private boolean connected = false;
-    private String deskAppVer = "";   // ⌨ ج50: نسخة تطبيق الحاسوب من /ping (فارغة = تحديث قديم بلا فأرة/كيبورد)
+    private String deskAppVer = "";   // ج50: نسخة تطبيق الحاسوب من /ping (فارغة = تحديث قديم بلا فأرة/كيبورد)
+    String hostType = "pc";   // ج51: pc أو tv — أيقونة مختلفة + إخفاء الفأرة والكيبورد للتلفاز
     private int fails = 0;
     private boolean searching = false;
     private boolean reconnecting = false;
@@ -119,6 +120,11 @@ public class RemoteActivity extends Activity {
 
     // لوحة التحكم
     private LinearLayout remoteScreen;
+    private ImageView typeIcon;                  // ج51: أيقونة الجهاز بالرأس (شاشة/تلفاز)
+    FrameLayout padPanel;                // ج51: لوحة اللمس (تُخفى للتلفاز)
+    LinearLayout kbBtnCtl;               // ج51: زر الكيبورد (يُخفى للتلفاز)
+    private final android.util.LruCache<String, android.graphics.Bitmap> imgCache = new android.util.LruCache<>(24);   // شعارات نتائج البحث
+    private final ExecutorService imgs = Executors.newSingleThreadExecutor();
     private TextView headName, headState, nowPlaying;
     private View headDot;
     private ImageView playIcon;
@@ -152,7 +158,9 @@ public class RemoteActivity extends Activity {
         super.onDestroy();
         try { if (mlock != null) mlock.release(); } catch (Exception e) {}
         poll.removeCallbacksAndMessages(null);
+        ui.removeCallbacksAndMessages(null);
         net.shutdownNow();
+        imgs.shutdownNow();   // ج51: شعارات نتائج البحث
     }
 
     // أزرار صوت الهاتف = صوت الحاسوب
@@ -363,8 +371,8 @@ public class RemoteActivity extends Activity {
         headRow.setOrientation(LinearLayout.HORIZONTAL);
         headRow.setGravity(Gravity.CENTER_VERTICAL);
 
-        ImageView mon = icon(R.drawable.ic_monitor, GOLD, 19);
-        headRow.addView(mon);
+        typeIcon = icon(R.drawable.ic_monitor, GOLD, 19);   // ج51: تتبدل حسب نوع الجهاز (pc/tv)
+        headRow.addView(typeIcon);
 
         headName = new TextView(this);
         headName.setText(R.string.found_pc);
@@ -444,6 +452,7 @@ public class RemoteActivity extends Activity {
 
         // ═ لوحة اللمس — مساحة كبيرة + شريط تمرير جانبي ═
         FrameLayout tp = new FrameLayout(this);
+        padPanel = tp;   // ج51: تُخفى للتلفاز (لا فأرة على LATCHI TV)
         tp.setBackground(round(PANEL2, 20 * dp(1), STROKE, 1 * dp(1)));
         LinearLayout.LayoutParams tpLp = new LinearLayout.LayoutParams(-1, 150 * dp(1));
         tpLp.topMargin = 16 * dp(1);
@@ -481,9 +490,13 @@ public class RemoteActivity extends Activity {
         tp.addView(rail, rlLp);
         body.addView(tp);
 
-        // ═ ⌨ الكيبورد والأرقام — صف الأدوات الذهبي (ج50: الكيبورد مثل الأرقام تماماً) ═
+        // ═ الكيبورد والأرقام — صف الأدوات الذهبي (ج50: الكيبورد مثل الأرقام تماماً) ═
         LinearLayout tools = ctlRow(12);
+        LinearLayout srchBtn = ctl(tools, R.drawable.ic_search, R.string.search_all, this::showSearchSheet);   // ج51
+        srchBtn.setBackground(goldOutlinePress());
+        tintCtl(srchBtn, GOLD);
         LinearLayout kbBtn = ctl(tools, R.drawable.ic_keyboard, R.string.keyboard, this::showKeyboard);
+        kbBtnCtl = kbBtn;   // ج51: يُخفى للتلفاز
         kbBtn.setBackground(goldOutlinePress());
         tintCtl(kbBtn, GOLD);
         LinearLayout numsBtn = ctl(tools, R.drawable.ic_numpad, R.string.numbers, this::showNumbers);
@@ -746,7 +759,7 @@ public class RemoteActivity extends Activity {
         d.show();
     }
 
-    // ═══════════════════ ⌨ لوحة المفاتيح (ج50) — Bottom Sheet مثل الأرقام تماماً ═══════════════════
+    // ═══════════════════ لوحة المفاتيح (ج50) — Bottom Sheet مثل الأرقام تماماً ═══════════════════
     // كل حرف يُرسل فوراً للحاسوب وهو يدرجه في الحقل المركّز (البحث/الأكواد) — بلا زر «إرسال».
     void showKeyboard() {
         Dialog d = new Dialog(this);
@@ -1141,8 +1154,9 @@ public class RemoteActivity extends Activity {
                             seen.add(p.getAddress().getHostAddress());
                             final String ip = p.getAddress().getHostAddress();
                             final String name = nz(jstr(json, "name"), getString(R.string.found_pc));
+                            final String type = nz(jstr(json, "type"), "pc");   // ج51
                             final boolean needPin = json.contains("\"pin\":true") || json.contains("\"pin\": true");
-                            ui.post(() -> addFoundRow(ip, name, needPin, seen.size() == 1));
+                            ui.post(() -> addFoundRow(ip, name, type, needPin, seen.size() == 1));
                         }
                     } catch (SocketTimeoutException te) { /* نكشف البث من جديد */ }
                 }
@@ -1166,17 +1180,18 @@ public class RemoteActivity extends Activity {
         }).start();
     }
 
-    /** بطاقة الحاسوب المكتشف — أول واحد يتصل تلقائياً، والبقية باللمس */
-    private void addFoundRow(String ip, String name, boolean needPin, boolean autoConnect) {
+    /** بطاقة الجهاز المكتشف (حاسوب أو تلفاز) — أول واحد يتصل تلقائياً، والبقية باللمس */
+    private void addFoundRow(String ip, String name, String type, boolean needPin, boolean autoConnect) {
         if (connected) return;
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.HORIZONTAL);
         card.setGravity(Gravity.CENTER_VERTICAL);
         card.setBackground(press(PANEL, 16 * dp(1)));
         card.setPadding(dp(14), dp(13), dp(14), dp(13));
-        card.setOnClickListener(v -> { haptic(v); connectTo(ip, name, needPin); });
+        card.setOnClickListener(v -> { haptic(v); hostType = type; connectTo(ip, name, needPin); });
 
-        ImageView mon = icon(R.drawable.ic_monitor, GOLD, 22);
+        boolean isTv = "tv".equals(type);   // ج51: أيقونة مختلفة للتلفاز
+        ImageView mon = icon(isTv ? R.drawable.ic_tv : R.drawable.ic_monitor, GOLD, 22);
         card.addView(mon);
 
         LinearLayout mid = new LinearLayout(this);
@@ -1231,7 +1246,8 @@ public class RemoteActivity extends Activity {
             HttpResp r = http("GET", "http://" + host + ":37777/ping", null, pin);
             if (r.code != 200) throw new Exception("HTTP " + r.code);
             String name = nz(jstr(r.body, "name"), getString(R.string.found_pc));
-            deskAppVer = nz(jstr(r.body, "appVer"), "");   // ⌨ ج50: نسخة الحاسوب (فارغة = تحديث قديم)
+            deskAppVer = nz(jstr(r.body, "appVer"), "");   // ج50: نسخة الحاسوب (فارغة = تحديث قديم)
+            hostType = nz(jstr(r.body, "type"), "pc");      // ج51: pc أو tv
             boolean needPin = r.body.contains("\"pin\":true") || r.body.contains("\"pin\": true");
             hostName = name;
             if (needPin) {
@@ -1255,7 +1271,8 @@ public class RemoteActivity extends Activity {
             if (r.body.contains("\"pin\":true") && pin.isEmpty()) { ui.post(this::resetConnectScreen); return; }
             HttpResp st = http("GET", "http://" + host + ":37777/status", null, pin);
             if (st.code == 401) { ui.post(this::resetConnectScreen); return; }
-            deskAppVer = nz(jstr(r.body, "appVer"), "");   // ⌨ ج50
+            deskAppVer = nz(jstr(r.body, "appVer"), "");   // ج50
+            hostType = nz(jstr(r.body, "type"), "pc");      // ج51
             final String nm = nz(jstr(r.body, "name"), getString(R.string.found_pc));
             hostName = nm;
             ui.post(() -> enterRemote(nm));
@@ -1308,13 +1325,18 @@ public class RemoteActivity extends Activity {
         resetConnectScreen();
     }
 
-    private void enterRemote(String name) {
+    void enterRemote(String name) {
         connected = true;
         fails = 0;
         userLeft = false;
         headName.setText(name);
         hostName = name;
-        // ⌨ ج50: كشف النسخة القديمة — تحديث الحاسوب القديم لا يدعم الفأرة والكيبورد
+        // ج51: نوع الجهاز — تلفاز LATCHI TV أم حاسوب LATCHI PC (أيقونة + أدوات مختلفة)
+        boolean isTv = "tv".equals(hostType);
+        if (typeIcon != null) typeIcon.setImageResource(isTv ? R.drawable.ic_tv : R.drawable.ic_monitor);
+        if (padPanel != null) padPanel.setVisibility(isTv ? View.GONE : View.VISIBLE);
+        if (kbBtnCtl != null) kbBtnCtl.setVisibility(isTv ? View.GONE : View.VISIBLE);
+        // ج50: كشف النسخة القديمة — تحديث الحاسوب القديم لا يدعم الفأرة والكيبورد
         if (deskAppVer.isEmpty()) toast(getString(R.string.old_pc_ver));
         headName.setOnLongClickListener(v -> {
             toast(getString(deskAppVer.isEmpty() ? R.string.pc_ver_unknown : R.string.pc_ver, deskAppVer.isEmpty() ? "" : deskAppVer));
@@ -1381,7 +1403,7 @@ public class RemoteActivity extends Activity {
         headDot.setBackground(dot);
     }
 
-    /** 🔄 إعادة اتصال تلقائية: 5 محاولات كل 2.5 ث قبل إخبار المستخدم */
+    /** إعادة اتصال تلقائية: 5 محاولات كل 2.5 ث قبل إخبار المستخدم */
     private void startAutoReconnect() {
         if (reconnecting || userLeft) return;
         reconnecting = true;
@@ -1409,6 +1431,256 @@ public class RemoteActivity extends Activity {
                 });
             }
         }).start();
+    }
+
+    /** أمر بحث قابل للتمرير (بلا java.util.function — توافق مع أندرويد 5) */
+    private interface QRun { void go(String q); }
+
+    // ═══════════════════ ج51: البحث في محتوى الجهاز المتصل (حاسوب أو تلفاز) ═══════════════════
+
+    /** نافذة البحث: اكتب اسم قناة/فيلم/مسلسل → نتائج بشعارات → الضغط يشغّلها فوراً على الجهاز */
+    void showSearchSheet() {
+        if (!connected) { toast(getString(R.string.not_connected)); return; }
+        final Dialog d = new Dialog(this);
+        d.requestWindowFeature(Window.FEATURE_NO_TITLE);
+        LinearLayout p = new LinearLayout(this);
+        p.setOrientation(LinearLayout.VERTICAL);
+        GradientDrawable bg = round(BG, 0, 0, 0);
+        bg.setCornerRadii(new float[]{dp(22), dp(22), dp(22), dp(22), 0, 0, 0, 0});
+        p.setBackground(bg);
+        p.setPadding(dp(12), dp(10), dp(12), dp(14));
+
+        View handle = new View(this);
+        GradientDrawable hd = round(MUT, dp(2), 0, 0);
+        handle.setBackground(hd);
+        LinearLayout.LayoutParams hLp = new LinearLayout.LayoutParams(dp(38), dp(4));
+        hLp.gravity = Gravity.CENTER_HORIZONTAL;
+        p.addView(handle, hLp);
+
+        LinearLayout tRow = new LinearLayout(this);
+        tRow.setOrientation(LinearLayout.HORIZONTAL);
+        tRow.setGravity(Gravity.CENTER_VERTICAL);
+        LinearLayout.LayoutParams trLp = new LinearLayout.LayoutParams(-1, -2);
+        trLp.topMargin = dp(12); trLp.bottomMargin = dp(4);
+        tRow.setLayoutParams(trLp);
+        TextView t = new TextView(this);
+        t.setText(getString(R.string.search_in, hostName));
+        t.setTextColor(TXT); t.setTextSize(14);
+        t.setTypeface(Typeface.DEFAULT_BOLD, Typeface.BOLD);
+        t.setSingleLine(true);
+        t.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        tRow.addView(t, new LinearLayout.LayoutParams(0, -2, 1f));
+        ImageView x = icon(R.drawable.ic_close, MUT, 16);
+        x.setBackground(pressCircle(PANEL2, dp(15)));
+        x.setPadding(dp(6), dp(6), dp(6), dp(6));
+        x.setContentDescription(getString(R.string.close));
+        x.setOnClickListener(v -> d.dismiss());
+        tRow.addView(x, new LinearLayout.LayoutParams(dp(30), dp(30)));
+        p.addView(tRow);
+
+        // حقل البحث + زر
+        LinearLayout bar = new LinearLayout(this);
+        bar.setOrientation(LinearLayout.HORIZONTAL);
+        bar.setGravity(Gravity.CENTER_VERTICAL);
+        LinearLayout.LayoutParams barLp = new LinearLayout.LayoutParams(-1, -2);
+        barLp.topMargin = dp(8);
+        bar.setLayoutParams(barLp);
+        final EditText in = new EditText(this);
+        in.setHint(R.string.search_hint);
+        in.setSingleLine(true);
+        in.setTextColor(TXT); in.setHintTextColor(0xFF5A5F85);
+        in.setTextSize(14);
+        in.setBackground(round(PANEL, dp(12), STROKE, dp(1)));
+        in.setPadding(dp(14), dp(12), dp(14), dp(12));
+        bar.addView(in, new LinearLayout.LayoutParams(0, -2, 1f));
+        LinearLayout goBtn = new LinearLayout(this);
+        goBtn.setOrientation(LinearLayout.HORIZONTAL);
+        goBtn.setGravity(Gravity.CENTER);
+        goBtn.setBackground(goldPress());
+        LinearLayout.LayoutParams gLp = new LinearLayout.LayoutParams(-2, dp(46));
+        gLp.leftMargin = dp(8);
+        goBtn.setPadding(dp(16), 0, dp(16), 0);
+        ImageView gi = icon(R.drawable.ic_search, INK, 18);
+        goBtn.addView(gi);
+        bar.addView(goBtn, gLp);
+        p.addView(bar);
+
+        final TextView status = new TextView(this);
+        status.setTextColor(MUT); status.setTextSize(12);
+        status.setPadding(dp(4), dp(10), dp(4), dp(6));
+        p.addView(status);
+
+        ScrollView sc = new ScrollView(this);
+        final LinearLayout list = new LinearLayout(this);
+        list.setOrientation(LinearLayout.VERTICAL);
+        sc.addView(list);
+        android.view.WindowManager wm = (android.view.WindowManager) getSystemService(WINDOW_SERVICE);
+        int maxH = 460 * dp(1);
+        try { maxH = Math.min(maxH, (wm.getDefaultDisplay().getHeight() * 2) / 3); } catch (Exception e) {}
+        p.addView(sc, new LinearLayout.LayoutParams(-1, maxH));
+
+        final QRun run = q -> runSearch(q, list, status, d);
+        goBtn.setOnClickListener(v -> { haptic(v); run.accept(in.getText().toString().trim()); });
+        in.setOnEditorActionListener((v, actId, ev) -> {
+            if (actId == android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH
+                    || (ev != null && ev.getAction() == KeyEvent.ACTION_UP && (ev.getKeyCode() == KeyEvent.KEYCODE_ENTER || ev.getKeyCode() == KeyEvent.KEYCODE_DPAD_CENTER))) {
+                run.accept(in.getText().toString().trim());
+                return true;
+            }
+            return false;
+        });
+        in.addTextChangedListener(new android.text.TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence cs, int a, int b2, int c) {}
+            @Override public void onTextChanged(CharSequence cs, int a, int b2, int c) {}
+            @Override public void afterTextChanged(android.text.Editable ed) {
+                final String q = ed.toString().trim();
+                ui.removeCallbacks(pendingSearch);
+                if (q.isEmpty()) { list.removeAllViews(); status.setText(""); return; }
+                pendingSearch = () -> run.accept(q);
+                ui.postDelayed(pendingSearch, 550);
+            }
+        });
+
+        d.setContentView(p);
+        d.show();
+        android.view.Window w = d.getWindow();
+        if (w != null) w.setLayout(-1, -2);
+        try { in.requestFocus(); } catch (Exception e) {}
+    }
+
+    private Runnable pendingSearch = null;
+
+    /** GET /search?q — يبحث الجهاز المتصل في كل محتواه (قنوات/أفلام/مسلسلات) */
+    private void runSearch(final String query, final LinearLayout list, final TextView status, final Dialog d) {
+        if (query == null || query.isEmpty()) return;
+        status.setText(R.string.searching_content);
+        net.execute(() -> {
+            try {
+                String q = java.net.URLEncoder.encode(query, "UTF-8");
+                HttpResp r = http("GET", "http://" + host + ":37777/search?q=" + q, null, pin);
+                if (r.code != 200) throw new Exception("HTTP " + r.code);
+                final List<String> items = jarr(r.body, "results");
+                final boolean ok = r.body.contains("\"ok\":true") || !items.isEmpty();
+                ui.post(() -> {
+                    list.removeAllViews();
+                    if (!ok || items.isEmpty()) {
+                        status.setText(R.string.no_results);
+                        return;
+                    }
+                    status.setText(getString(R.string.results_count, items.size()));
+                    for (String it : items) addResultRow(list, it, d);
+                });
+            } catch (Exception e) {
+                ui.post(() -> status.setText(R.string.search_failed));
+            }
+        });
+    }
+
+    /** صف نتيجة: شعار + اسم + نوع — الضغط يشغّله فوراً على الجهاز */
+    private void addResultRow(final LinearLayout list, final String itemJson, final Dialog d) {
+        final String name = nz(jstr(itemJson, "name"), "?");
+        String type = nz(jstr(itemJson, "type"), "live");
+        final String logo = nz(jstr(itemJson, "logo"), "");
+        String group = nz(jstr(itemJson, "group"), "");
+
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setBackground(press(PANEL, dp(12)));
+        row.setPadding(dp(10), dp(9), dp(10), dp(9));
+        row.setOnClickListener(v -> { haptic(v); playRemote(itemJson); d.dismiss(); });
+
+        ImageView iv = new ImageView(this);
+        iv.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        iv.setBackgroundColor(0xFF1A2244);
+        LinearLayout.LayoutParams ivLp = new LinearLayout.LayoutParams(dp(46), dp(34));
+        row.addView(iv, ivLp);
+        loadLogo(iv, logo);
+
+        LinearLayout mid = new LinearLayout(this);
+        mid.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout.LayoutParams midLp = new LinearLayout.LayoutParams(0, -2, 1f);
+        midLp.leftMargin = dp(10);
+        row.addView(mid, midLp);
+
+        TextView n = new TextView(this);
+        n.setText(name);
+        n.setTextColor(TXT); n.setTextSize(14);
+        n.setSingleLine(true);
+        n.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        mid.addView(n);
+
+        TextView g = new TextView(this);
+        String typeLbl = "series".equals(type) ? getString(R.string.res_series)
+                : "movie".equals(type) ? getString(R.string.res_movie) : getString(R.string.res_live);
+        g.setText(typeLbl + (group.isEmpty() ? "" : "  •  " + group));
+        g.setTextColor(MUT); g.setTextSize(11);
+        g.setSingleLine(true);
+        g.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        g.setPadding(0, dp(3), 0, 0);
+        mid.addView(g);
+
+        ImageView pl = icon(R.drawable.ic_play, GOLD, 16);
+        pl.setBackground(pressCircle(PANEL2, dp(17)));
+        pl.setPadding(dp(6), dp(6), dp(6), dp(6));
+        row.addView(pl, new LinearLayout.LayoutParams(dp(32), dp(32)));
+
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+        lp.topMargin = dp(7);
+        list.addView(row, lp);
+    }
+
+    /** POST /play — تبديل ما يشغَّل على الجهاز المتصل فوراً */
+    private void playRemote(final String itemJson) {
+        if (!connected) { toast(getString(R.string.not_connected)); return; }
+        net.execute(() -> {
+            try {
+                HttpResp r = http("POST", "http://" + host + ":37777/play", "{\"item\":" + itemJson + "}", pin);
+                final boolean ok = r.code == 200 && (r.body.contains("\"ok\":true"));
+                ui.post(() -> toast(getString(ok ? R.string.sent_to_device : R.string.play_failed)));
+            } catch (Exception e) {
+                ui.post(() -> toast(getString(R.string.play_failed)));
+            }
+        });
+    }
+
+    /** تحميل شعار نتيجة (HTTP) بذاكرة صغيرة — بلا أي مكتبات خارجية */
+    private void loadLogo(final ImageView iv, final String url) {
+        if (url == null || url.isEmpty()) { iv.setVisibility(View.INVISIBLE); return; }
+        android.graphics.Bitmap b = imgCache.get(url);
+        if (b != null) { iv.setImageBitmap(b); return; }
+        iv.setTag(url);
+        imgs.execute(() -> {
+            HttpURLConnection c = null;
+            try {
+                c = (HttpURLConnection) new java.net.URL(url).openConnection();
+                c.setConnectTimeout(2000); c.setReadTimeout(2500);
+                final android.graphics.Bitmap bm = android.graphics.BitmapFactory.decodeStream(c.getInputStream());
+                if (bm != null) {
+                    imgCache.put(url, bm);
+                    ui.post(() -> { if (url.equals(iv.getTag())) iv.setImageBitmap(bm); });
+                }
+            } catch (Exception e) {
+            } finally { if (c != null) try { c.disconnect(); } catch (Exception e) {} }
+        });
+    }
+
+    /** JSON مصفوفة مصغرة: عناصر {..} لمفتاح مصفوفة — يكفي لنتائج البحث */
+    static List<String> jarr(String json, String key) {
+        List<String> out = new ArrayList<>();
+        if (json == null) return out;
+        String pat = "\"" + key + "\\":[";
+        int i = json.indexOf(pat);
+        if (i < 0) return out;
+        i += pat.length();
+        int depth = 1, start = -1;
+        for (; i < json.length() && depth > 0; i++) {
+            char ch = json.charAt(i);
+            if (ch == '{') { if (depth == 1) start = i; depth++; }
+            else if (ch == '}') { depth--; if (depth == 1 && start >= 0) { out.add(json.substring(start, i + 1)); start = -1; } }
+            else if (ch == ']') depth--;
+        }
+        return out;
     }
 
     // ═══════════════════ الشبكة ═══════════════════

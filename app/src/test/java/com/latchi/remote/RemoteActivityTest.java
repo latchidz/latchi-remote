@@ -95,7 +95,7 @@ public class RemoteActivityTest {
         assertEquals("ArrowRight", keys.get(1));
     }
 
-    /** لوحة الأرقام: تنزلق من الأسفل وتحوي 12 زراً فعلياً (1-9 + ⌫ + 0 + ↵) */
+    /** لوحة الأرقام: تنزلق من الأسفل وتحوي 12 زراً فعلياً (1-9 + + 0 + ↵) */
     @Test
     public void numbersSheetOpensWith12Keys() {
         RemoteActivity a = Robolectric.setupActivity(RemoteActivity.class);
@@ -107,7 +107,7 @@ public class RemoteActivityTest {
         assertEquals("12 زر أرقام", 12, btns.size());
         List<String> labels = new ArrayList<>();
         for (Button b : btns) labels.add(b.getText().toString());
-        for (String n : new String[]{"1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "⌫", "↵"})
+        for (String n : new String[]{"1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "", "↵"})
             assertTrue("يحوي " + n, labels.contains(n));
     }
 
@@ -121,24 +121,67 @@ public class RemoteActivityTest {
         List<android.widget.EditText> boxes = new ArrayList<>();
         collectEditTexts((ViewGroup) d.getWindow().getDecorView(), boxes);
         assertEquals("حقل كتابة واحد", 1, boxes.size());
-        // الأزرار الثلاثة: مسافة + ⌫ + ↵
+        // الأزرار الثلاثة: مسافة + + ↵
         List<Button> btns = new ArrayList<>();
         collectButtons((ViewGroup) d.getWindow().getDecorView(), btns);
         assertEquals("3 أزرار مساعدة", 3, btns.size());
         List<String> labels = new ArrayList<>();
         for (Button b : btns) labels.add(b.getText().toString());
-        // ⌫ و↵ رموز ثابتة عبر اللغات؛ زر المسافة نصه مترجم (مسافة/Space/Espace)
-        assertTrue("يحوي ⌫", labels.contains("⌫"));
-        assertTrue("يحوي ↵", labels.contains("↵"));
-        boolean hasSpace = false;
-        for (String l : labels) if (!l.equals("⌫") && !l.equals("↵") && l.trim().length() > 1) hasSpace = true;
-        assertTrue("يحوي زر المسافة (بلغة الجهاز)", hasSpace);
+        // ج51: أزرار الحذف/الإدخال/المسافة نصية مترجمة — بلا أي رموز
+        long txtBtns = 0;
+        for (String l : labels) if (l.trim().length() > 1) txtBtns++;
+        assertTrue("أزرار الحذف والإدخال والمسافة نصية مترجمة (3+)", txtBtns >= 3);
+        boolean noSymbols = true;
+        for (String l : labels) if (l.contains("\u232B") || l.contains("\u21B5")) noSymbols = false;
+        assertTrue("بلا رموز الحذف/الإدخال القديمة (أيقونات/نص فقط)", noSymbols);
         // الكتابة في الحقل تُرسل فوراً: نحاكي إدراج حرف — المنفذ قد لا يكون موصولاً لكن لا يُسمح بأي استثناء
         boxes.get(0).getText().append("a");
-        // ⌫ يحذف آخر حرف من الحقل
+        // يحذف آخر حرف من الحقل
         android.text.Editable e = boxes.get(0).getText();
         e.append("b"); e.delete(e.length() - 1, e.length());
         assertEquals("الحقل فارغ بعد الحذف", 1, boxes.get(0).getText().length());   // "a" بقيت
+    }
+
+    // ═══ ج51: البحث الشامل + أنواع الأجهزة (حاسوب/تلفاز) ═══
+
+    /** parser مصفوفة نتائج /search يستخرج كائنات {..} حتى بالسلاسل المتشعبة */
+    @Test
+    public void jarrParsesSearchResults() {
+        String body = "{\"ok\":true,\"results\":[{\"id\":\"L1\",\"name\":\"قناة الأولى\",\"type\":\"live\"},{\"id\":\"M77\",\"name\":\"فيلم\",\"type\":\"movie\"},{}]}";
+        List<String> items = RemoteActivity.jarr(body, "results");
+        assertEquals("نتيجتان + عنصر فارغ", 3, items.size());
+        assertEquals("اسم النتيجة الأولى", "قناة الأولى", RemoteActivity.jstr(items.get(0), "name"));
+        assertEquals("نوع النتيجة الثانية", "movie", RemoteActivity.jstr(items.get(1), "type"));
+        assertTrue("مصفوفة مفقودة = قائمة فارغة", RemoteActivity.jarr("{}", "results").isEmpty());
+    }
+
+    /** تلفاز LATCHI TV: أيقونة مختلفة + تُخفى الفأرة والكيبورد (بلا أدوات حاسوب) */
+    @Test
+    public void tvDeviceHidesMouseAndKeyboard() {
+        RemoteActivity a = Robolectric.setupActivity(RemoteActivity.class);
+        a.hostType = "tv";
+        a.enterRemote("LATCHI TV");
+        assertNotNull("لوحة اللمس مبنية", a.padPanel);
+        assertNotNull("زر الكيبورد مبني", a.kbBtnCtl);
+        assertEquals("الفأرة مخفية للتلفاز", View.GONE, a.padPanel.getVisibility());
+        assertEquals("الكيبورد مخفي للتلفاز", View.GONE, a.kbBtnCtl.getVisibility());
+
+        a.hostType = "pc";
+        a.enterRemote("LATCHI PC");
+        assertEquals("الفأرة تعود للحاسوب", View.VISIBLE, a.padPanel.getVisibility());
+        assertEquals("الكيبورد يعود للحاسوب", View.VISIBLE, a.kbBtnCtl.getVisibility());
+    }
+
+    /** بروتوكول ج51: مسارات البحث والتشغيل وتمرير نوع الجهاز موجودة بالمصدر */
+    @Test
+    public void g51ProtocolPresent() throws Exception {
+        String src = new String(java.nio.file.Files.readAllBytes(
+                java.nio.file.Paths.get("src/main/java/com/latchi/remote/RemoteActivity.java")), "UTF-8");
+        assertTrue("GET /search?q للبحث في محتوى الجهاز", src.contains("/search?q="));
+        assertTrue("POST /play لتشغيل نتيجة عن بعد", src.contains("/play"));
+        assertTrue("قراءة نوع الجهاز (type) من الاكتشاف وping", src.contains("jstr(json, \"type\"") && src.contains("jstr(r.body, \"type\""));
+        assertTrue("أيقونة تلفاز مختلفة", src.contains("R.drawable.ic_tv"));
+        assertTrue("ورقة البحث مثبتة بزر بالصف الذهبي", src.contains("showSearchSheet"));
     }
 
     private static void collectEditTexts(ViewGroup g, List<android.widget.EditText> out) {
