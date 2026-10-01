@@ -71,4 +71,10 @@
     <string name="play_failed">Lecture impossible sur l\'appareil</string>
     <string name="search_failed">Échec de la recherche — vérifiez la connexion</string>
     <string name="found_tv">LATCHI TV</string>
+    <string name="update_title">Mise à jour disponible</string>
+    <string name="update_body">LATCHI Remote %s est prêt — mettez à jour pour la recherche globale et le support LATCHI TV.</string>
+    <string name="update_now">Mettre à jour</string>
+    <string name="update_later">Plus tard</string>
+    <string name="update_downloading">Téléchargement…</string>
+    <string name="update_failed">Échec du téléchargement — réessayez plus tard</string>
 </resources>

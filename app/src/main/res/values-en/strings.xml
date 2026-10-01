@@ -71,4 +71,10 @@
     <string name="play_failed">Could not play on the device</string>
     <string name="search_failed">Search failed — check the connection</string>
     <string name="found_tv">LATCHI TV</string>
+    <string name="update_title">New update available</string>
+    <string name="update_body">LATCHI Remote %s is ready — update now to get global search and LATCHI TV support.</string>
+    <string name="update_now">Update now</string>
+    <string name="update_later">Later</string>
+    <string name="update_downloading">Downloading update…</string>
+    <string name="update_failed">Update download failed — try again later</string>
 </resources>

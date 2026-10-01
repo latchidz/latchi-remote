@@ -71,4 +71,10 @@
     <string name="play_failed">تعذر التشغيل على الجهاز</string>
     <string name="search_failed">تعذر البحث — تحقق من الاتصال</string>
     <string name="found_tv">تلفاز LATCHI</string>
+    <string name="update_title">تحديث جديد متوفر</string>
+    <string name="update_body">النسخة الجديدة %s من تطبيق LATCHI Remote جاهزة — حدّث الآن لتحصل على البحث الشامل ودعم تلفاز LATCHI TV.</string>
+    <string name="update_now">تحديث الآن</string>
+    <string name="update_later">لاحقاً</string>
+    <string name="update_downloading">جارٍ تنزيل التحديث…</string>
+    <string name="update_failed">تعذر تنزيل التحديث — حاول لاحقاً</string>
 </resources>

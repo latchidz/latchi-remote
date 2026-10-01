@@ -120,7 +120,7 @@ workflows:
           ASSET="latchi-remote-${REMOTE_VERSION_NAME}.apk"
           API="https://api.github.com/repos/$OWNER/$REPO"
           AUTH="Authorization: Bearer $GITHUB_TOKEN"
-          export NOTES_AR REMOTE_VERSION_NAME
+          export NOTES_AR REMOTE_VERSION_NAME REMOTE_VERSION_CODE
 
           echo "Creating or reading GitHub Release $OWNER/$REPO $TAG"
           RELEASE_JSON=$(curl -sS -H "$AUTH" -H "Accept: application/vnd.github+json" "$API/releases/tags/$TAG" || true)
@@ -144,6 +144,44 @@ workflows:
             exit 1
           fi
           echo "Public APK URL: $APK_URL"
+
+          # ═══ قناة التحديث التلقائي للتطبيق (remote_update.json) — مثل التلفاز ═══
+          echo "Publishing remote_update.json OTA channel"
+          export APK_URL
+          python3 - <<'PY'
+          import json, os, base64, urllib.request
+          owner="latchidz"; repo="LATCHI-RELEASES"
+          token=os.environ.get("GITHUB_TOKEN","")
+          if not token:
+              print("No GITHUB_TOKEN — skipping OTA channel update")
+              raise SystemExit(0)
+          api=f"https://api.github.com/repos/{owner}/{repo}"
+          def hdr(extra=None):
+              h={"Authorization":"Bearer "+token,"Accept":"application/vnd.github+json"}
+              if extra: h.update(extra)
+              return h
+          content={
+              "update_available": True,
+              "versionCode": int(os.environ["REMOTE_VERSION_CODE"]),
+              "versionName": os.environ.get("REMOTE_VERSION_NAME",""),
+              "apkUrl": os.environ["APK_URL"],
+              "forceUpdate": False,
+              "notes": {"ar": os.environ.get("NOTES_AR","تحديث جديد من LATCHI Remote."),
+                        "en": "LATCHI Remote update — global search and LATCHI TV support."}
+          }
+          body=json.dumps(content, ensure_ascii=False, indent=2)+chr(10)
+          sha=None
+          try:
+              req=urllib.request.Request(api+"/contents/remote_update.json", headers=hdr())
+              with urllib.request.urlopen(req, timeout=30) as r:
+                  sha=json.loads(r.read().decode()).get("sha")
+          except Exception:
+              pass
+          payload={"message":"Remote OTA: remote-v"+os.environ.get("REMOTE_VERSION_NAME",""),"content":base64.b64encode(body.encode()).decode(),("sha" if sha else "branch"):(sha if sha else "main")}
+          req=urllib.request.Request(api+"/contents/remote_update.json", data=json.dumps(payload).encode(), headers=hdr({"Content-Type":"application/json"}), method="PUT")
+          with urllib.request.urlopen(req, timeout=40) as r:
+              print("remote_update.json:", r.status)
+          PY
 
     artifacts:
       - artifacts/*.apk

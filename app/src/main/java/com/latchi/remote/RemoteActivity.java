@@ -143,6 +143,8 @@ public class RemoteActivity extends Activity {
             if (mlock != null) mlock.acquire();
         } catch (Exception e) {}
 
+        maybeCheckUpdate();   // ج51: تحديث تلقائي — قناة remote_update.json مثل التلفاز
+
         SharedPreferences sp = getSharedPreferences("latchi_remote", MODE_PRIVATE);
         String lastHost = sp.getString("host", null);
         String lastPin = sp.getString("pin", "");
@@ -1681,6 +1683,98 @@ public class RemoteActivity extends Activity {
             else if (ch == ']') depth--;
         }
         return out;
+    }
+
+    // ═══════════════════ ج51: التحديث التلقائي (remote_update.json على LATCHI-RELEASES) ═══════════════════
+
+    private static final String UPDATE_URL = "https://raw.githubusercontent.com/latchidz/LATCHI-RELEASES/main/remote_update.json";
+
+    /** يفحص التحديث عند كل تشغيل (بحد أقصى مرة كل 6 ساعات) */
+    private void maybeCheckUpdate() {
+        SharedPreferences sp = getSharedPreferences("latchi_remote", MODE_PRIVATE);
+        long last = sp.getLong("upd_checked", 0);
+        if (System.currentTimeMillis() - last < 6 * 3600_000L) return;
+        sp.edit().putLong("upd_checked", System.currentTimeMillis()).apply();
+        new Thread(this::checkUpdate).start();
+    }
+
+    private void checkUpdate() {
+        try {
+            java.net.HttpURLConnection c = (java.net.HttpURLConnection) new java.net.URL(UPDATE_URL).openConnection();
+            c.setConnectTimeout(3000);
+            c.setReadTimeout(4000);
+            c.setRequestProperty("Cache-Control", "no-cache");
+            StringBuilder sb = new StringBuilder();
+            try (java.io.BufferedReader br = new java.io.BufferedReader(
+                    new java.io.InputStreamReader(c.getInputStream(), StandardCharsets.UTF_8))) {
+                String line;
+                while ((line = br.readLine()) != null) sb.append(line);
+            }
+            c.disconnect();
+            String body = sb.toString();
+            int newCode = Integer.parseInt(nz(jstr(body, "versionCode"), "0"));
+            String apkUrl = nz(jstr(body, "apkUrl"), "");
+            String verName = nz(jstr(body, "versionName"), "");
+            String notes = nz(jstr(body, "notes_ar"), nz(jstr(body, "notes"), ""));
+            if (newCode > BuildConfig.VERSION_CODE && !apkUrl.isEmpty()) {
+                ui.post(() -> showUpdateDialog(newCode, verName, notes, apkUrl));
+            }
+        } catch (Exception e) { /* لا شيء — الفحص صامت */ }
+    }
+
+    /** مربع «تحديث جديد» بأسلوب التطبيق — تنزيل فوري بالـDownloadManager ثم فتح المثبت */
+    private void showUpdateDialog(final int newCode, final String verName, final String notes, final String apkUrl) {
+        LinearLayout wrap = new LinearLayout(this);
+        wrap.setOrientation(LinearLayout.VERTICAL);
+        wrap.setPadding(dp(8), dp(8), dp(8), dp(4));
+        TextView msg = new TextView(this);
+        msg.setTextColor(TXT); msg.setTextSize(13);
+        String bodyTxt = getString(R.string.update_body, verName.isEmpty() ? String.valueOf(newCode) : verName);
+        msg.setText(notes == null || notes.isEmpty() ? bodyTxt : bodyTxt + "\n\n" + notes);
+        wrap.addView(msg);
+        new android.app.AlertDialog.Builder(this)
+                .setTitle(R.string.update_title)
+                .setView(wrap)
+                .setPositiveButton(R.string.update_now, (d, w) -> downloadUpdate(apkUrl))
+                .setNegativeButton(R.string.update_later, null)
+                .setCancelable(true)
+                .show();
+    }
+
+    private void downloadUpdate(String apkUrl) {
+        try {
+            String name = "latchi-remote-update.apk";
+            android.app.DownloadManager.Request req = new android.app.DownloadManager.Request(android.net.Uri.parse(apkUrl));
+            req.setTitle(getString(R.string.update_downloading));
+            req.setDescription("LATCHI Remote");
+            req.setDestinationInExternalFilesDir(this, android.os.Environment.DIRECTORY_DOWNLOADS, name);
+            req.setNotificationVisibility(android.app.DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);
+            android.app.DownloadManager dm = (android.app.DownloadManager) getSystemService(DOWNLOAD_SERVICE);
+            final long id = dm.enqueue(req);
+            toast(getString(R.string.update_downloading));
+            BroadcastReceiver done = new BroadcastReceiver() {
+                @Override public void onReceive(Context ctx, Intent intent) {
+                    if (!intent.getAction().equals(android.app.DownloadManager.ACTION_DOWNLOAD_COMPLETE)) return;
+                    long doneId = intent.getLongExtra(android.app.DownloadManager.EXTRA_DOWNLOAD_ID, -1);
+                    if (doneId != id) return;
+                    try { unregisterReceiver(this); } catch (Exception e) {}
+                    try {
+                        android.net.Uri uri = dm.getUriForDownloadedFile(id);
+                        if (uri == null) { toast(getString(R.string.update_failed)); return; }
+                        Intent open = new Intent(Intent.ACTION_VIEW);
+                        open.setDataAndType(uri, "application/vnd.android.package-archive");
+                        open.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                        open.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                        startActivity(open);
+                    } catch (Exception e) { toast(getString(R.string.update_failed)); }
+                }
+            };
+            IntentFilter f = new IntentFilter(android.app.DownloadManager.ACTION_DOWNLOAD_COMPLETE);
+            if (android.os.Build.VERSION.SDK_INT >= 33) registerReceiver(done, f, Context.RECEIVER_NOT_EXPORTED);
+            else registerReceiver(done, f);
+        } catch (Exception e) {
+            toast(getString(R.string.update_failed));
+        }
     }
 
     // ═══════════════════ الشبكة ═══════════════════
