@@ -1671,7 +1671,7 @@ public class RemoteActivity extends Activity {
     static List<String> jarr(String json, String key) {
         List<String> out = new ArrayList<>();
         if (json == null) return out;
-        String pat = "\"" + key + "\\":[";
+        String pat = "\"" + key + "\":[";
         int i = json.indexOf(pat);
         if (i < 0) return out;
         i += pat.length();
