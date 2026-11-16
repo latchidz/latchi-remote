@@ -500,6 +500,9 @@ public class RemoteActivity extends Activity {
         LinearLayout srchBtn = ctl(tools, R.drawable.ic_search, R.string.search_all, this::showSearchSheet);   // ج51
         srchBtn.setBackground(goldOutlinePress());
         tintCtl(srchBtn, GOLD);
+        LinearLayout accBtn = ctl(tools, R.drawable.ic_lock, R.string.accounts_title, this::showAccountsSheet);   // v1.2.0: حسابات الحاسوب
+        accBtn.setBackground(goldOutlinePress());
+        tintCtl(accBtn, GOLD);
         LinearLayout kbBtn = ctl(tools, R.drawable.ic_keyboard, R.string.keyboard, this::showKeyboard);
         kbBtnCtl = kbBtn;   // ج51: يُخفى للتلفاز
         kbBtn.setBackground(goldOutlinePress());
@@ -1551,6 +1554,134 @@ public class RemoteActivity extends Activity {
         android.view.Window w = d.getWindow();
         if (w != null) w.setLayout(-1, -2);
         try { in.requestFocus(); } catch (Exception e) {}
+    }
+
+    // ═══ v1.2.0: ورقة الحسابات — كشف/إضافة/حذف/دخول فوري في الحاسوب من الريموت ═══
+    void showAccountsSheet() {
+        final Dialog d = new Dialog(this, android.R.style.Theme_DeviceDefault_NoActionBar);
+        LinearLayout p = new LinearLayout(this);
+        p.setOrientation(LinearLayout.VERTICAL);
+        p.setBackground(press(PANEL2, dp(16)));
+        p.setPadding(dp(14), dp(12), dp(14), dp(14));
+        TextView title = new TextView(this);
+        title.setText(R.string.accounts_title); title.setTextColor(GOLD); title.setTextSize(17);
+        title.setTypeface(null, android.graphics.Typeface.BOLD);
+        p.addView(title);
+        final TextView status = new TextView(this);
+        status.setTextColor(TXT); status.setTextSize(13); status.setText(R.string.acc_loading);
+        p.addView(status);
+        final EditText in = new EditText(this);
+        in.setHint(R.string.acc_hint_code); in.setTextColor(TXT); in.setHintTextColor(0xFF8A93B8);
+        in.setBackground(press(PANEL, dp(10))); in.setPadding(dp(10), dp(8), dp(10), dp(8)); in.setSingleLine(true);
+        LinearLayout.LayoutParams inLp = new LinearLayout.LayoutParams(-1, -2); inLp.setMargins(0, dp(8), 0, 0);
+        p.addView(in, inLp);
+        LinearLayout formRow = new LinearLayout(this); formRow.setOrientation(LinearLayout.HORIZONTAL);
+        LinearLayout.LayoutParams frLp = new LinearLayout.LayoutParams(-1, -2); frLp.setMargins(0, dp(8), 0, dp(8));
+        final boolean[] isCode = { true };
+        final TextView kindBtn = mkAccBtn(getString(R.string.acc_kind_code), PANEL, GOLD);
+        kindBtn.setOnClickListener(v -> { haptic(v); isCode[0] = !isCode[0]; kindBtn.setText(isCode[0] ? getString(R.string.acc_kind_code) : getString(R.string.acc_kind_m3u)); in.setHint(isCode[0] ? R.string.acc_hint_code : R.string.acc_hint_m3u); });
+        formRow.addView(kindBtn);
+        final LinearLayout list = new LinearLayout(this); list.setOrientation(LinearLayout.VERTICAL);
+        TextView addBtn = mkAccBtn(getString(R.string.acc_add_btn), GOLD, INK);
+        addBtn.setOnClickListener(v -> { haptic(v); String val = in.getText().toString().trim(); if (val.isEmpty()) { status.setText(R.string.acc_no_value); return; } accAdd(isCode[0], val, status, list); in.setText(""); });
+        formRow.addView(addBtn);
+        p.addView(formRow, frLp);
+        ScrollView sc = new ScrollView(this); sc.addView(list);
+        android.view.WindowManager wm = (android.view.WindowManager) getSystemService(WINDOW_SERVICE);
+        int maxH = 420 * dp(1);
+        try { maxH = Math.min(maxH, (wm.getDefaultDisplay().getHeight() * 2) / 3); } catch (Exception e) {}
+        p.addView(sc, new LinearLayout.LayoutParams(-1, maxH));
+        d.setContentView(p);
+        d.show();
+        android.view.Window w = d.getWindow(); if (w != null) w.setLayout(-1, -2);
+        fetchAccounts(list, status);
+    }
+
+    private TextView mkAccBtn(String text, int bg, int fg) {
+        TextView b = new TextView(this);
+        b.setText(text); b.setTextColor(fg); b.setTextSize(12); b.setGravity(Gravity.CENTER);
+        b.setBackground(press(bg, dp(9)));
+        b.setPadding(dp(12), dp(6), dp(12), dp(6));
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, -2); lp.setMargins(dp(6), 0, 0, 0);
+        b.setLayoutParams(lp);
+        return b;
+    }
+
+    /** GET /api/accounts — قائمة حسابات الحاسوب مع شارة النشط */
+    private void fetchAccounts(final LinearLayout list, final TextView status) {
+        net.execute(() -> {
+            try {
+                HttpResp r = http("GET", "http://" + host + ":37777/api/accounts", null, pin);
+                if (r.code != 200) throw new Exception("HTTP " + r.code);
+                final List<String> accs = jarr(r.body, "accounts");
+                ui.post(() -> {
+                    list.removeAllViews();
+                    if (accs == null || accs.isEmpty()) { status.setText(R.string.acc_empty); return; }
+                    status.setText(getString(R.string.acc_count, accs.size()));
+                    for (String a : accs) accRow(list, a, status);
+                });
+            } catch (Exception e) { ui.post(() -> status.setText(R.string.acc_failed)); }
+        });
+    }
+
+    private void accRow(LinearLayout list, String aJson, TextView status) {
+        final String id = nz(jstr(aJson, "id"), "");
+        final String label = nz(jstr(aJson, "label"), "?");
+        final String kind = nz(jstr(aJson, "kind"), "m3u");
+        final String exp = nz(jstr(aJson, "exp"), "");
+        final boolean active = aJson.contains("\"active\":true");
+        LinearLayout row = new LinearLayout(this); row.setOrientation(LinearLayout.VERTICAL);
+        row.setBackground(press(PANEL, dp(12))); row.setPadding(dp(10), dp(8), dp(10), dp(8));
+        LinearLayout.LayoutParams rowLp = new LinearLayout.LayoutParams(-1, -2); rowLp.setMargins(0, dp(6), 0, 0);
+        LinearLayout top = new LinearLayout(this); top.setOrientation(LinearLayout.HORIZONTAL); top.setGravity(Gravity.CENTER_VERTICAL);
+        TextView t = new TextView(this);
+        t.setText(label + (active ? "  • " + getString(R.string.acc_active) : ""));
+        t.setTextColor(active ? GOLD : TXT); t.setTextSize(14);
+        t.setTypeface(null, android.graphics.Typeface.BOLD);
+        top.addView(t, new LinearLayout.LayoutParams(0, -2, 1f));
+        TextView go = mkAccBtn(getString(R.string.acc_enter), GOLD, INK);
+        go.setOnClickListener(v -> { haptic(v); accOp("activate", id, status, list); });
+        top.addView(go);
+        TextView del = mkAccBtn(getString(R.string.acc_del), 0xFF3A1020, 0xFFFF8A80);
+        del.setOnClickListener(v -> { haptic(v); accOp("remove", id, status, list); });
+        top.addView(del);
+        row.addView(top);
+        TextView sub = new TextView(this);
+        sub.setText((kind.equals("code") ? getString(R.string.acc_kind_code) : getString(R.string.acc_kind_m3u)) + (exp.isEmpty() ? "" : " · " + exp));
+        sub.setTextColor(0xFF8A93B8); sub.setTextSize(11);
+        row.addView(sub);
+        list.addView(row, rowLp);
+    }
+
+    /** POST /api/accounts {op: activate|remove} — دخول فوري حتى أثناء مشاهدة قناة، أو حذف */
+    private void accOp(final String op, final String id, final TextView status, final LinearLayout list) {
+        net.execute(() -> {
+            try {
+                String body = "{\"op\":\"" + op + "\",\"payload\":{\"id\":\"" + id + "\"}}";
+                HttpResp r = http("POST", "http://" + host + ":37777/api/accounts", body, pin);
+                final boolean ok = r.code == 200 && r.body.contains("\"ok\":true");
+                ui.post(() -> {
+                    status.setText(ok ? (op.equals("activate") ? R.string.acc_switched : R.string.acc_deleted) : R.string.acc_failed);
+                    if (ok) fetchAccounts(list, status);
+                });
+            } catch (Exception e) { ui.post(() -> status.setText(R.string.acc_failed)); }
+        });
+    }
+
+    /** POST /api/accounts {op:add} — كود تفعيل/رابط اكستريم أو M3U، ويُحوّل الحاسوب فوراً */
+    private void accAdd(final boolean code, final String value, final TextView status, final LinearLayout list) {
+        net.execute(() -> {
+            try {
+                String v = value.replace("\\", "\\\\").replace("\"", "\\\"");
+                String body = "{\"op\":\"add\",\"payload\":{\"kind\":\"" + (code ? "code" : "m3u") + "\",\"value\":\"" + v + "\",\"activate\":true}}";
+                HttpResp r = http("POST", "http://" + host + ":37777/api/accounts", body, pin);
+                final boolean ok = r.code == 200 && r.body.contains("\"ok\":true");
+                ui.post(() -> {
+                    status.setText(ok ? R.string.acc_added : R.string.acc_failed);
+                    if (ok) fetchAccounts(list, status);
+                });
+            } catch (Exception e) { ui.post(() -> status.setText(R.string.acc_failed)); }
+        });
     }
 
     private Runnable pendingSearch = null;
